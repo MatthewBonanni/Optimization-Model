@@ -8,7 +8,7 @@
 %% Configuration
 
 model_step_count = 30;
-seed_count = 3;
+seed_count = 5;
 
 %Physical parameters set in stone
 consts = struct('lever_sweep',      25, ...
@@ -47,10 +47,22 @@ indeps = struct('button_contact_x_i',   [], ...
 
 indeps_fields = fieldnames(indeps);
 
+%Objectives
+pareto_obj = struct('cam_moment_ratio',     [], ...
+                    'beam_length',          [], ...
+                    'button_travel',        []  ...
+                    );
+
+objectives_fields = fieldnames(pareto_obj);
+
+for i = 1:numel(objectives_fields)
+    pareto_obj.(objectives_fields{i}) = pareto_objective;
+end
+
 %Weights
-cam_moment_ratio_weight = 1;
-beam_length_weight = -10;
-button_travel_weight = -1;
+pareto_obj.cam_moment_ratio.weight =    1;
+pareto_obj.beam_length.weight =         -10;
+pareto_obj.button_travel.weight =       -1;
 
 %Create seed points
 seeds = randi(model_step_count, [seed_count, numel(indeps_fields)]);
@@ -60,61 +72,96 @@ nearby = double(dec2bin(0:(2^numel(indeps_fields)-1))=='1');
 nearby(nearby == 0) = -1;
 
 %% Find utopia points
-utopia_pos = zeros(numel(indeps_fields), seed_count);
 
-%Iterate over seeds
-for i = 1:size(seeds, 1)
+%Variables for keeping track of maxima
+obj_border =        0;
+obj_border_max =    0;
+obj_max =           zeros(seed_count,1);
+
+%Variables for keeping track of position
+posn = [];
+border_posn = [];
+
+%Iterate over objectives
+for i = 1:length(objectives_fields)
     
-    peak = false;
-    
-    posn = seeds(i,:);
-    
-    %Organize seed inputs
-    
-    %Fill indeps struct with correct parameter values
-    for j = 1:numel(indeps_fields)
-        indeps.(indeps_fields{j}) = feasible.(indeps_fields{j})(posn(j));
-    end
-    
-    [cam_moment_ratio, beam_length, button_travel] = eject_model(indeps, params, consts);
-    cam_moment_ratio_max = mean(cam_moment_ratio);
-    
-    while ~peak
+    %Iterate over seeds
+    for j = 1:size(seeds, 1)
         
-        cam_moment_ratio_border_max = cam_moment_ratio_max;
+        peak = false;
         
-        for j = 1:size(nearby,1)
+        posn = seeds(j,:);
+        
+        %Fill indeps struct with seed values
+        for k = 1:numel(indeps_fields)
+            indeps.(indeps_fields{k}) = feasible.(indeps_fields{k})(posn(k));
+        end
+        
+        %Get initial objective values for comparison
+        objectives = eject_model(indeps, params, consts);
+        obj_max(j) = mean(objectives.(objectives_fields{i}));
+        
+        
+        
+        while ~peak
             
-            border_posn = posn + nearby(j,:);
-            if any(border_posn < 1) || any(border_posn > model_step_count)
-                continue;
-            end                
+            obj_border_max = obj_max(j);
             
-            %Fill indeps struct with correct parameter values
-            for k = 1:numel(indeps_fields)
-                indeps.(indeps_fields{k}) = feasible.(indeps_fields{k})(border_posn(k));
+            for k = 1:size(nearby,1)
+                
+                %Go to next border position
+                border_posn = posn + nearby(k,:);
+                if any(border_posn < 1) || any(border_posn > model_step_count)
+                    continue;
+                end
+                
+                %Fill indeps struct with correct parameter values
+                for l = 1:numel(indeps_fields)
+                    indeps.(indeps_fields{l}) = feasible.(indeps_fields{l})(border_posn(l));
+                end
+                
+                %Run model
+                objectives = eject_model(indeps, params, consts);
+                obj_border = mean(objectives.(objectives_fields{i}));
+                
+                %Check that outputs are valid
+                if ~isreal(obj_border)
+                    continue;
+                end
+                
+                %If this the new best border point, write it to obj_border_max
+                if obj_border > obj_border_max
+                    obj_border_max = obj_border;
+                    border_max_posn = border_posn;
+                end
             end
             
-            [cam_moment_ratio, beam_length, button_travel] = eject_model(indeps, params, consts);
-            cam_moment_ratio_border_new = mean(cam_moment_ratio);
-            
-            if cam_moment_ratio_border_new > cam_moment_ratio_border_max
-                cam_moment_ratio_border_max = cam_moment_ratio_border_new;
-                border_max = border_posn;
+            %Move the cursor to the highest scored border point
+            if obj_border_max > obj_max(j)
+                posn = border_max_posn;
+                obj_max(j) = obj_border_max;
+            else
+                peak = true;
             end
         end
         
-        if cam_moment_ratio_border_max > cam_moment_ratio_max
-            posn = border_max;
-            cam_moment_ratio_max = cam_moment_ratio_border_max;
-        else
-            peak = true;
-        end
-        
-        disp(cam_moment_ratio_max);
+        disp(obj_max)
         
     end
+    
+    %Write utopia point to optimization struct
+    pareto_obj.(objectives_fields{i}).utopia = mean(obj_max);
+    
+    %Reset max values
+    obj_border =        0;
+    obj_border_max =    0;
+    obj_max =           zeros(seed_count,1);
+    
 end
+
+%% Find Nadir points
+
+%% Find Pareto optimal solution
 
 %Iterate over seed points
 for i = 1:size(seeds, 1)

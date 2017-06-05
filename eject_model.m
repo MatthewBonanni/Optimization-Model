@@ -1,4 +1,4 @@
-function [cam_moment_ratio, beam_length, button_travel] = eject_model(indeps, params, consts)
+function objectives = eject_model(indeps, params, consts)
 %EJECT_MODEL Calculate eject mechanism geometry for analysis
 %   
 %   Takes the following arguments:
@@ -21,9 +21,8 @@ function [cam_moment_ratio, beam_length, button_travel] = eject_model(indeps, pa
 %   Uses geometric model (documented in OneNote) to calculate mechanism
 %   geometry, including some output parameters to be optimized.
 %   
-%   [cam_moment_ratio, beam_length, button_travel] = ...
-%       EJECT_MODEL(indeps, params, consts) returns the following physical
-%       measurements to be optimized:
+%   objectives = EJECT_MODEL(indeps, params, consts) returns a struct of 
+%       the following physical measurements to be optimized:
 %       
 %       cam_moment_ratio        Cam input/output moment ratio
 %       beam_length             Length of cam beam
@@ -34,6 +33,11 @@ function [cam_moment_ratio, beam_length, button_travel] = eject_model(indeps, pa
 
 %% Configuration
 cam_step_count = 50;
+
+objectives = struct('cam_moment_ratio',     [], ...
+                    'beam_length',          [], ...
+                    'button_travel',        []  ...
+                    );
 
 %% Create part objects
 cam = linkpart;
@@ -93,7 +97,7 @@ cam.moment_arms.button_dist = sqrt(button_contact.x .^2 + button_contact.y ^2);
 lever_contact.x = cam.end_dist * cosd(cam.beam.theta);
 
 %Calculate ratio of cam moments
-cam_moment_ratio = button_contact.y ./ lever_contact.x;
+objectives.cam_moment_ratio = button_contact.y ./ lever_contact.x;
 
 %Calculate lever sweep angles
 cam.y = cam.end_dist .* sind(cam.beam.theta);
@@ -111,5 +115,5 @@ lever.x = hinge_dist(1) + lever.x;
 cam.beam.len = lever.x;
 
 %For output
-beam_length = cam.beam.len;
-button_travel = button_contact.x;
+objectives.beam_length = cam.beam.len;
+objectives.button_travel = button_contact.x;
